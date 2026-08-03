@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id       String @id @default(uuid())
+  email    String  @unique
+  password String
+  membership Membership[]
+}
+
+model Organization {
+  id  String @id @default(uuid())
+  name String
+  description String
+  membership Membership[]
+  board Boards[]
+  
+}
+
+enum Role {
+  member 
+  admin
+}
+
+model Membership {
+  id String @id @default(uuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id])
+  orgId String
+  organization Organization @relation(fields: [orgId], references: [id])
+  role Role
+}
+
+model Boards {
+  id String @id @default(uuid())
+  title String
+  orgId String
+  organization Organization @relation(fields: [orgId], references: [id])
+  section Section[]
+  issue Issue[]
+}
+
+model Section {
+  id String @id @default(uuid())
+  title String
+  boardId String
+  board Boards @relation(fields: [boardId], references: [id])
+  issue Issue[]
+}
+
+model Issue{
+  id String @id @default(uuid())
+  title String
+  description String
+  boardId String
+  board Boards @relation(fields: [boardId], references: [id])
+  sectionId String
+  section Section @relation(fields: [sectionId], references: [id])
+  comments Comments[]
+}
+
+model Comments {
+  id String @id @default(uuid())
+  comment String
+  issueId String
+  issue Issue @relation(fields: [issueId], references: [id])
+}
