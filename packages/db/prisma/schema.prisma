@@ -16,17 +16,44 @@ model User {
   id       String @id @default(uuid())
   email    String  @unique
   password String
+  description String
+  profilePhoto String
   membership Membership[]
+  invitation Invitation[]
 }
 
+
+model Invitation {
+  id String @id @default(uuid())
+  email     String
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+
+  role      Role @default(member)
+
+  invitedBy String
+  inviter   User @relation(fields: [invitedBy], references: [id])
+
+  status    InvitationStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
 model Organization {
   id  String @id @default(uuid())
   name String
   description String
   membership Membership[]
   board Boards[]
-  
+  invitation Invitation[]
 }
+  
+
 
 enum Role {
   member 
@@ -73,6 +100,8 @@ model Issue{
 model Comments {
   id String @id @default(uuid())
   comment String
-  issueId String
+  issueId String @unique
   issue Issue @relation(fields: [issueId], references: [id])
 }
+
+
