@@ -62,11 +62,13 @@ enum Role {
 
 model Membership {
   id String @id @default(uuid())
-  userId String @unique
+  userId String
   user User @relation(fields: [userId], references: [id])
   orgId String
   organization Organization @relation(fields: [orgId], references: [id])
   role Role
+
+  @@unique([userId, orgId])
 }
 
 model Boards {
@@ -100,7 +102,7 @@ model Issue{
 model Comments {
   id String @id @default(uuid())
   comment String
-  issueId String @unique
+  issueId String
   issue Issue @relation(fields: [issueId], references: [id])
 }
 
