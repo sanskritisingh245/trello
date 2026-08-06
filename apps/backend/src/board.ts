@@ -1,151 +1,179 @@
-import express ,{type Response , type Request  } from "express";
-import { BoardSchema} from "../zod";
+import express, { type Response, type Request } from "express";
+import { BoardSchema, BoardUpdateSchema } from "../zod";
 import { prisma } from "db/client";
 
-import { authMiddleware } from "../HELPER/authMiddleware";
+import { authMiddleware } from "../helper/authMiddleware";
+import { hasRole } from "../helper/hasRole";
 
-const app = express();
-app.use(express.json())
+const router = express.Router();
 
-
-app.get("/api/v1/boards", authMiddleware , async (req:Request, res:Response)=>{
-    try{
-        const userId=req.id;
-        const org= await prisma.membership.findUnique({
-            where:{
-                userId:userId
-            }
-        })
-        const board= await prisma.boards.findMany({
-            where:{
-                orgId:org?.id
-            }
-        })
-
-        return res.status(200).json({
-            success:true,
-            data:{board}
-        })
-        
-    }catch(e:any){
-        return res.status(500).json({
+router.get(
+  "/api/v1/boards",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const userId = req.id;
+    const orgId = req.query.orgId as string;
+    if (!orgId) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "PLEASE_PROVIDE_ORGID",
       });
     }
-})
 
-
-app.post("/api/v1/boards", authMiddleware, async (req:Request, res:Response)=>{
-    try{
-         const {success, data}= BoardSchema.safeParse(req.body);
-        if(!success){
-            return res.status(400).json({
-                success:false,
-                error:"INVALID_DATA"
-            })
-        }
-        const userId= req.id;
-
-        const is_admin= await prisma.membership.findUnique({
-            where:{
-                userId:userId
-            }
-        })
-        if (is_admin){
-
-
-
-        }
-        
-    }catch(e:any){
-        return res.status(500).json({
+    const membership = await prisma.membership.findFirst({
+      where: {
+        userId: userId,
+        orgId: orgId,
+      },
+    });
+    if (!membership) {
+      return res.status(403).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "UNAUTHORIZED",
       });
     }
-})
 
-app.delete("/api/v1/boards/:boardId", authMiddleware , async(req:Request, res:Response)=>{
-    try{
-        const boardId= req.params.boardId as string;
-        if (!boardId){
-            return res.status(200).json({
-                success:false,
-                error:"PLEASE_PROVIDE_BOARD_ID"
-            })
-        }
+    const board = await prisma.boards.findMany({
+      where: {
+        orgId: orgId,
+      },
+    });
 
-        const userId= req.id;
-        const membership = await prisma.membership.findUnique({
-            where:{
-                userId:userId,
-            }
-        })
-        const role = membership?.role;
+    return res.status(200).json({
+      success: true,
+      data: { board },
+    });
+  },
+);
 
-        if (role != "admin"){
-            return res.status(400).json({
-                success:false,
-                error:"NOT_AUTHENTICATED_TO_CREATE_ORG"
-            })
-        }
-
-        prisma.boards.delete({
-            where:{
-                id:boardId
-            }
-        })
-
-        return res.status(200).json({
-            success:true,
-            msg:"SUCCESSFULLY_DELETED"
-        })
-
-    }catch(e:any){
-        return res.status(500).json({
+router.post(
+  "/api/v1/boards",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const { success, data } = BoardSchema.safeParse(req.body);
+    if (!success) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "INVALID_DATA",
       });
     }
-})
+    const userId = req.id;
 
-app.put("/api/v1/boards/:boardId", authMiddleware, async (req:Request, res:Response)=>{
-    try{
-        const boardId= req.params.boardId as string;
-        const userId= req.id;
-        const membership = await prisma.membership.findUnique({
-            where:{
-                userId:userId,
-            }
-        })
-        const role = membership?.role;
-
-        if (role != "admin"){
-            return res.status(400).json({
-                success:false,
-                error:"NOT_AUTHENTICATED_TO_CREATE_ORG"
-            })
-        }
-
-        const board = await prisma.boards.delete({
-            where:{
-                id:boardId
-            }
-        })
-        return res.status(200).json({
-            success:true,
-            msg:"SUCCESSFULLY_DELETED"
-        })
-
-    }catch(e:any){
-        return res.status(500).json({
+    if (!(await hasRole(userId, data.orgId, "admin"))) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "NOT_AUTHENTICATED_TO_CREATE_ORG",
       });
     }
-})
 
-app.listen(3000, ()=>{
-    console.log("running on port 3000")
-})
+    const board = await prisma.boards.create({
+      data: {
+        title: data.title,
+        orgId: data.orgId,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: board,
+    });
+  },
+);
+
+router.delete(
+  "/api/v1/boards/:boardId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const boardId = req.params.boardId as string;
+    if (!boardId) {
+      return res.status(400).json({
+        success: false,
+        error: "PLEASE_PROVIDE_BOARD_ID",
+      });
+    }
+
+    const userId = req.id;
+
+    const board = await prisma.boards.findUnique({
+      where: {
+        id: boardId,
+      },
+    });
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        error: "BOARD_NOT_FOUND",
+      });
+    }
+
+    if (!(await hasRole(userId, board.orgId, "admin"))) {
+      return res.status(400).json({
+        success: false,
+        error: "NOT_AUTHENTICATED_TO_CREATE_ORG",
+      });
+    }
+
+    await prisma.boards.delete({
+      where: {
+        id: boardId,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      msg: "SUCCESSFULLY_DELETED",
+    });
+  },
+);
+
+router.put(
+  "/api/v1/boards/:boardId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const boardId = req.params.boardId as string;
+    const { success, data } = BoardUpdateSchema.safeParse(req.body);
+    if (!success) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_DATA",
+      });
+    }
+
+    const userId = req.id;
+
+    const board = await prisma.boards.findUnique({
+      where: {
+        id: boardId,
+      },
+    });
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        error: "BOARD_NOT_FOUND",
+      });
+    }
+
+    if (!(await hasRole(userId, board.orgId, "admin"))) {
+      return res.status(400).json({
+        success: false,
+        error: "NOT_AUTHENTICATED_TO_CREATE_ORG",
+      });
+    }
+
+    const updatedBoard = await prisma.boards.update({
+      where: {
+        id: boardId,
+      },
+      data: {
+        title: data.title,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: updatedBoard,
+    });
+  },
+);
+
+export default router;
