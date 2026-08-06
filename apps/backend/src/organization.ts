@@ -1,204 +1,175 @@
-import express ,{type Response , type Request  } from "express";
-import {  OrgSchema, updateOrgSchema } from "../zod";
+import express, { type Response, type Request } from "express";
+import { OrgSchema, updateOrgSchema } from "../zod";
 import { prisma } from "db/client";
 
-import { authMiddleware } from "../HELPER/authMiddleware";
+import { authMiddleware } from "../helper/authMiddleware";
+import { hasRole } from "../helper/hasRole";
 
+const router = express.Router();
 
-const app = express();
-app.use(express.json())
-
-app.post("/api/v1/organization/create",authMiddleware, async (req:Request, res:Response)=>{
-    try{
-        const {success , data}= OrgSchema.safeParse(req.body);
-        if (!success){
-            return res.status(400).json({
-                success:false,
-                error:"INVALID_REQUEST"
-            })
-        }
-        const userId=req.id;
-
-        const membership = await prisma.membership.findUnique({
-            where:{
-                userId:userId
-            }
-        })
-        const role = membership?.role;
-
-        if (role != "admin"){
-            return res.status(400).json({
-                success:false,
-                error:"NOT_AUTHENTICATED_TO_CREATE_ORG"
-            })
-        }
-
-        const org = await prisma.organization.create({
-            data:{
-                name:data.name,
-                description:data.description
-            }
-        })
-
-        return res.status(200).json({
-            success:true,
-            msg:"ORG_SUCCESSFULLY_CREATED"
-        })
-
-    }catch(e:any){
-        return res.status(500).json({
+router.post(
+  "/api/v1/organization/create",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const { success, data } = OrgSchema.safeParse(req.body);
+    if (!success) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "INVALID_REQUEST",
       });
     }
-})
+    const userId = req.id;
 
-app.put("/api/v1/organization/update", authMiddleware, async (req:Request,res:Response )=>{
-    try{
-        const {success, data} = updateOrgSchema.safeParse(req.body);
-        if (!success){
-            return res.status(400).json({
-                success:false,
-                error:"INVALID_REQUEST"
-            })
-        }
+    const org = await prisma.organization.create({
+      data: {
+        name: data.name,
+        description: data.description,
+      },
+    });
 
-        const userId=req.id;
-        const membership = await prisma.membership.findUnique({
-            where:{
-                userId:userId
-            }
-        })
-        const role = membership?.role;
+    await prisma.membership.create({
+      data: {
+        userId: userId,
+        orgId: org.id,
+        role: "admin",
+      },
+    });
 
-        if (role != "admin"){
-            return res.status(400).json({
-                success:false,
-                error:"NOT_AUTHENTICATED_TO_CREATE_ORG"
-            })
-        }
-        prisma.organization.update({
-            where:{
-                id:membership?.orgId
-            },data:{
-                name:data.name,
-                description:data.description
-            }
-        })
-        
+    return res.status(200).json({
+      success: true,
+      data: org,
+      msg: "ORG_SUCCESSFULLY_CREATED",
+    });
+  },
+);
 
-    }catch(e:any){
-        return res.status(500).json({
+router.put(
+  "/api/v1/organization/:orgId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const { success, data } = updateOrgSchema.safeParse(req.body);
+    if (!success) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "INVALID_REQUEST",
       });
     }
-})
 
-app.get("/api/v1/organization", authMiddleware, async(req:Request, res:Response)=>{
-    try{
-        const userId= req.id;
-        const membership = await prisma.membership.findMany({
-            where:{
-                userId:userId
-            },
-            include: {
-                organization: true
-            }
-        })
-
-        return res.status(200).json({
-            success:true,
-            data:{
-               membership
-            }
-        })
-
-    }catch(e:any){
-        return res.status(500).json({
+    const orgId = req.params.orgId as string;
+    if (!orgId) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "PLEASE_PROVIDE_ORGID",
       });
     }
-    
-})
 
-app.get("/api/v1/organization/:orgId", authMiddleware, async(req:Request, res:Response)=>{
-    try{
-        const orgId= req.params.orgId as string;
-        if(!orgId){
-            return res.status(400).json({
-                success:false,
-                error:"PLEASE_PROVIDE_ORGID"
-            })
-        }
-        const userId= req.id;
+    const userId = req.id;
 
-        const membership= await prisma.membership.findUnique({
-            where:{
-                userId:userId,
-                orgId:orgId
-            },
-            include: {
-                organization: true
-            }
-        })
-
-        return res.status(200).json({
-            success:true,
-            data:{membership}
-        })
-
-    }catch(e:any){
-        return res.status(500).json({
+    if (!(await hasRole(userId, orgId, "admin"))) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "NOT_AUTHENTICATED_TO_CREATE_ORG",
       });
     }
-})
+    const org = await prisma.organization.update({
+      where: {
+        id: orgId,
+      },
+      data: {
+        name: data.name,
+        description: data.description,
+      },
+    });
 
-app.delete("/api/v1/organization/:orgId", authMiddleware , async(req:Request, res:Response)=>{
-    try{
-        const orgId= req.params.orgId as string;
-        if(!orgId){
-            return res.status(400).json({
-                success:false,
-                error:"PLEASE_PROVIDE_ORGID"
-            })
-        }
-        const userId= req.id;
-        const membership = await prisma.membership.findUnique({
-            where:{
-                userId:userId,
-                orgId:orgId
-            }
-        })
-        const role = membership?.role;
+    return res.status(200).json({
+      success: true,
+      data: org,
+    });
+  },
+);
 
-        if (role != "admin"){
-            return res.status(400).json({
-                success:false,
-                error:"NOT_AUTHENTICATED_TO_CREATE_ORG"
-            })
-        }
+router.get(
+  "/api/v1/organization",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const userId = req.id;
+    const membership = await prisma.membership.findMany({
+      where: {
+        userId: userId,
+      },
+      include: {
+        organization: true,
+      },
+    });
 
-        prisma.organization.delete({
-            where:{id:orgId}
-        })
+    return res.status(200).json({
+      success: true,
+      data: {
+        membership,
+      },
+    });
+  },
+);
 
-        return res.status(200).json({
-            success:true,
-            msg:"ORGANIZATION_DELETED_SUCCESSFULLY"
-        })
-    }catch(e:any){
-        return res.status(500).json({
+router.get(
+  "/api/v1/organization/:orgId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const orgId = req.params.orgId as string;
+    if (!orgId) {
+      return res.status(400).json({
         success: false,
-        msg: e.message || "Internal Server Error",
+        error: "PLEASE_PROVIDE_ORGID",
       });
     }
-})
+    const userId = req.id;
 
-app.listen(3000, ()=>{
-    console.log("running on port 3000")
-})
+    const membership = await prisma.membership.findFirst({
+      where: {
+        userId: userId,
+        orgId: orgId,
+      },
+      include: {
+        organization: true,
+      },
+    });
 
+    return res.status(200).json({
+      success: true,
+      data: { membership },
+    });
+  },
+);
+
+router.delete(
+  "/api/v1/organization/:orgId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const orgId = req.params.orgId as string;
+    if (!orgId) {
+      return res.status(400).json({
+        success: false,
+        error: "PLEASE_PROVIDE_ORGID",
+      });
+    }
+    const userId = req.id;
+
+    if (!(await hasRole(userId, orgId, "admin"))) {
+      return res.status(400).json({
+        success: false,
+        error: "NOT_AUTHENTICATED_TO_CREATE_ORG",
+      });
+    }
+
+    await prisma.organization.delete({
+      where: { id: orgId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      msg: "ORGANIZATION_DELETED_SUCCESSFULLY",
+    });
+  },
+);
+
+export default router;
