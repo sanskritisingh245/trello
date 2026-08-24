@@ -33,7 +33,7 @@ class WsManager {
     string,
     {
       id: string;
-      profile: string;
+      profile: string | null;
       socket: WebSocket;
     }[]
   > = {};
@@ -105,12 +105,13 @@ class WsManager {
             },
             });
     
-            const profilePhoto = user?.profilePhoto;
-    
-            if (!profilePhoto) {
-            socket.close();
-            return;
+            if (!user) {
+              socket.close();
+              return;
             }
+
+            const profilePhoto = user.profilePhoto;
+
     
             if (parsedData.type === "join") {
             const boardId = parsedData.boardId;
@@ -137,7 +138,11 @@ class WsManager {
                 this.boards[previousBoardId] = this.boards[previousBoardId].filter(
                     (member) => member.socket !== socket
                 );
-    
+
+                this.boards[previousBoardId].forEach((member) => {
+                    member.socket.send(JSON.stringify({ type: "leave", id: payload.id }));
+                });
+
                 if(this.boards[previousBoardId].length === 0){
                     delete this.boards[previousBoardId]
                 }
@@ -153,6 +158,7 @@ class WsManager {
             socket.send(
               JSON.stringify({
                 type: "join",
+                id: payload.id,
                 profile: profilePhoto,
               })
             );
@@ -193,6 +199,20 @@ class WsManager {
             );
         });
     }
+    else if(parsedData.type === "board_changed"){
+        const boardId= this.joinedRooms.get(socket);
+        if(!boardId){
+            return;
+        }
+
+        if(!this.boards[boardId]){
+            return;
+        }
+
+        this.boards[boardId].filter((member)=>member.socket !== socket).forEach((member)=>{
+            member.socket.send(JSON.stringify({ type: "board_changed" }));
+        });
+    }
     } catch (error) {
         console.error("Failed to handle message:", error);
     }
@@ -209,9 +229,17 @@ class WsManager {
       return;
     }
 
+    const leaving = this.boards[joinedRoom].find((user) => user.socket === socket);
+
     this.boards[joinedRoom] = this.boards[joinedRoom].filter(
       (user) => user.socket !== socket
     );
+
+    if (leaving) {
+      this.boards[joinedRoom].forEach((member) => {
+        member.socket.send(JSON.stringify({ type: "leave", id: leaving.id }));
+      });
+    }
 
     if (this.boards[joinedRoom].length === 0) {
       delete this.boards[joinedRoom];
