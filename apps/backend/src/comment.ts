@@ -46,6 +46,12 @@ router.post(
       data: {
         issueId: issueId,
         comment: data.comment,
+        userId: userId,
+      },
+      include: {
+        user: {
+          select: { id: true, email: true, profilePhoto: true },
+        },
       },
     });
 
@@ -94,6 +100,13 @@ router.put(
       });
     }
 
+    if (comment.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "NOT_COMMENT_AUTHOR",
+      });
+    }
+
     const comments = await prisma.comments.update({
       where: {
         id: commentId,
@@ -131,7 +144,13 @@ router.get(
         },
       },
       include: {
-        comments: true,
+        comments: {
+          include: {
+            user: {
+              select: { id: true, email: true, profilePhoto: true },
+            },
+          },
+        },
       },
     });
 
@@ -177,6 +196,13 @@ router.delete(
       return res.status(403).json({
         success: false,
         error: "UNAUTHORIZED",
+      });
+    }
+
+    if (comment.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "NOT_COMMENT_AUTHOR",
       });
     }
 
