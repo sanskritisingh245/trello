@@ -4,6 +4,8 @@ import { prisma } from "db/client";
 
 import { authMiddleware } from "../helper/authMiddleware";
 import { hasRole } from "../helper/hasRole";
+import { sendInviteEmail } from "../helper/email";
+import { da } from "zod/locales";
 
 const router = express.Router();
 
@@ -28,20 +30,7 @@ router.post(
       });
     }
 
-    const user = await prisma.user.findUnique({
-      where: {
-        email: data.email,
-      },
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "USER_NOT_FOUND",
-      });
-    }
-
-    const invitation = await prisma.invitation.findFirst({
+    const existingInvitation = await prisma.invitation.findFirst({
       where: {
         email: data.email,
         orgId: data.orgId,
@@ -49,21 +38,28 @@ router.post(
       },
     });
 
-    if (invitation) {
+    if (existingInvitation) {
       return res.status(400).json({
         success: false,
         error: "INVITATION_ALREADY_SENT",
       });
     }
 
-    await prisma.invitation.create({
-      data: {
-        email: data.email,
-        orgId: data.orgId,
-        invitedBy: adminId,
-        role: "member",
+    const invitation = await prisma.invitation.create({
+      data:{
+        email:data.email,
+        orgId:data.orgId,
+        invitedBy:adminId,
+        role:"member"
       },
     });
+
+    const org = await prisma.organization.findUnique({
+      where:{
+        id:data.orgId
+      }
+    })
+    sendInviteEmail(data.email , org?.name ?? "an organization", invitation.id);
 
     return res.status(200).json({
       success: true,
@@ -146,6 +142,34 @@ router.post(
   },
 );
 
+router.get(
+  "/api/v1/membership/:orgId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    const adminId = req.id;
+    const orgId = req.params.orgId as string;
+
+    if (!(await hasRole(adminId, orgId, "admin"))) {
+      return res.status(403).json({
+        success: false,
+        error: "UNAUTHORIZED",
+      });
+    }
+
+    const membership = await prisma.membership.findMany({
+      where: { orgId },
+      include: {
+        user: { select: { id: true, email: true, profilePhoto: true } },
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { membership },
+    });
+  },
+);
+
 router.delete(
   "/api/v1/membership/:userId/:orgId",
   authMiddleware,
@@ -159,6 +183,34 @@ router.delete(
         success: false,
         error: "UNAUTHORIZED",
       });
+    }
+
+    const targetMembership = await prisma.membership.findUnique({
+      where: {
+        userId_orgId: {
+          userId: userId,
+          orgId: orgId,
+        },
+      },
+    });
+
+    if (!targetMembership) {
+      return res.status(404).json({
+        success: false,
+        error: "MEMBERSHIP_NOT_FOUND",
+      });
+    }
+
+    if (targetMembership.role === "admin") {
+      const adminCount = await prisma.membership.count({
+        where: { orgId, role: "admin" },
+      });
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: "CANNOT_REMOVE_LAST_ADMIN",
+        });
+      }
     }
 
     await prisma.membership.delete({
