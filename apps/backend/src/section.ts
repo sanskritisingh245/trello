@@ -126,10 +126,13 @@ router.get(
       });
     }
 
-    if (!(await hasRole(userId, orgId, "admin"))) {
-      return res.status(400).json({
+    const membership = await prisma.membership.findFirst({
+      where: { userId, orgId },
+    });
+    if (!membership) {
+      return res.status(403).json({
         success: false,
-        error: "NOT_AUTHENTICATED_TO_CREATE_ORG",
+        error: "UNAUTHORIZED",
       });
     }
     const boards = await prisma.boards.findMany({
