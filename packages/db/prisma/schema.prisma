@@ -15,11 +15,12 @@ datasource db {
 model User {
   id       String @id @default(uuid())
   email    String  @unique
-  password String
-  description String
-  profilePhoto String
+  password String?
+  description String?
+  profilePhoto String?
   membership Membership[]
   invitation Invitation[]
+  comments Comments[]
 }
 
 
@@ -27,7 +28,7 @@ model Invitation {
   id String @id @default(uuid())
   email     String
   orgId     String
-  org       Organization @relation(fields: [orgId], references: [id])
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   role      Role @default(member)
 
@@ -65,7 +66,7 @@ model Membership {
   userId String
   user User @relation(fields: [userId], references: [id])
   orgId String
-  organization Organization @relation(fields: [orgId], references: [id])
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   role Role
 
   @@unique([userId, orgId])
@@ -75,7 +76,7 @@ model Boards {
   id String @id @default(uuid())
   title String
   orgId String
-  organization Organization @relation(fields: [orgId], references: [id])
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   section Section[]
   issue Issue[]
 }
@@ -84,7 +85,7 @@ model Section {
   id String @id @default(uuid())
   title String
   boardId String
-  board Boards @relation(fields: [boardId], references: [id])
+  board Boards @relation(fields: [boardId], references: [id], onDelete: Cascade)
   issue Issue[]
 }
 
@@ -93,9 +94,9 @@ model Issue{
   title String
   description String
   boardId String
-  board Boards @relation(fields: [boardId], references: [id])
+  board Boards @relation(fields: [boardId], references: [id], onDelete: Cascade)
   sectionId String
-  section Section @relation(fields: [sectionId], references: [id])
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   comments Comments[]
 }
 
@@ -103,7 +104,9 @@ model Comments {
   id String @id @default(uuid())
   comment String
   issueId String
-  issue Issue @relation(fields: [issueId], references: [id])
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId String?
+  user User? @relation(fields: [userId], references: [id])
 }
 
 
