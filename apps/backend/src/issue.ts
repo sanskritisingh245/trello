@@ -118,7 +118,7 @@ router.put(
       });
     }
 
-    const issue = await prisma.issue.update({
+    const existingIssue = await prisma.issue.findFirst({
       where: {
         id: issueId,
         section: {
@@ -133,18 +133,24 @@ router.put(
           },
         },
       },
-      data: {
-        title: data.title,
-        description: data.description,
-      },
     });
 
-    if (!issue) {
+    if (!existingIssue) {
       return res.status(403).json({
         success: false,
         error: "UNAUTHORIZED",
       });
     }
+
+    const issue = await prisma.issue.update({
+      where: {
+        id: issueId,
+      },
+      data: {
+        title: data.title,
+        description: data.description,
+      },
+    });
 
     return res.status(200).json({
       success: true,
@@ -198,7 +204,7 @@ router.delete(
     const userId = req.id;
     const issueId = req.params.issueId as string;
 
-    const issue = await prisma.issue.delete({
+    const issue = await prisma.issue.findFirst({
       where: {
         id: issueId,
         section: {
@@ -220,6 +226,12 @@ router.delete(
         error: "UNAUTHORIZED",
       });
     }
+
+    await prisma.issue.delete({
+      where: {
+        id: issueId,
+      },
+    });
 
     return res.status(200).json({
       success: true,
